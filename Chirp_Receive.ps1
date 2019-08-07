@@ -8,21 +8,11 @@ param (
     [ValidateSet("UTF8", "UNICODE", "ASCII")]$Encoding = "UTF8"
 )
 
+$ErrorActionPreference = "Stop"
 [System.Reflection.Assembly]::LoadFile($ChirpDllPath)
 $connect = [ChirpConnectNet.ChirpConnect]::new($ChirpKey, $ChirpSecret, $ChirpConfig)
 
-Register-ObjectEvent -InputObject $connect -EventName "OnReceiving" -Action {
-    Write-Host "OnReceiving" $Args
-}
-
-Register-ObjectEvent -InputObject $connect -EventName "OnReceived" -Action {
-    Write-Host "OnReceived" $Args 
-    if ($Args[0].Count -gt 0)
-    {
-        $payload = [system.Text.Encoding]::UTF8.GetString($Args[0])
-        Write-Host $payload
-    }
-}
+$MessageData = New-Object PsObject -property @{ Encoding = $Encoding }
 
 Register-ObjectEvent -InputObject $connect -EventName "OnStateChanged" -Action {
     Write-Host "OnStateChanged" $Args
@@ -32,17 +22,28 @@ Register-ObjectEvent -InputObject $connect -EventName "OnUnsupportedCaptureDevic
     Write-Host "OnUnsupportedCaptureDevice" $Args
 }
 
-$err = $connect.Start([ChirpConnectNet.AudioMode]::Receive)
-if ($err) { Write-Host $err }
+Register-ObjectEvent -InputObject $connect -EventName "OnReceiving" -Action {
+    Write-Host "OnReceiving" $Args
+}
 
-try 
-{
+Register-ObjectEvent -InputObject $connect -EventName "OnReceived" -MessageData $MessageData -Action {
+    Write-Host "OnReceived" $Args
+
+    $payload = $Args[0]
+    if ($payload.Count -gt 0) {
+        $Encoding = $Event.MessageData.Encoding
+        $payloadString = [system.Text.Encoding]::$Encoding.GetString($payload)
+        Write-Host "payload string" $payloadString
+    }
+}
+
+$connect.Start([ChirpConnectNet.AudioMode]::Receive)
+
+try {
     while ($true) {
         Start-Sleep -Seconds $Sleep
     }
 }
-finally 
-{
-    $err = $connect.Stop()
-    if ($err) { Write-Host $err }
+finally {
+    $connect.Stop()
 }
